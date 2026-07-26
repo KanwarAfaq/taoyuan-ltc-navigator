@@ -1,0 +1,40 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;900&family=Manrope:wght@500;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-body: 'Noto Sans TC', 'Manrope', sans-serif;
+  --font-display: 'Manrope', 'Noto Sans TC', sans-serif;
+
+  --color-ink: #232323;
+  --color-paper: #FAF7F2;
+  --color-teal: #1B4B43;
+  --color-teal-light: #2E6B5E;
+  --color-sage: #A8C3B8;
+  --color-sage-light: #E4ECE7;
+  --color-amber: #E8A33D;
+  --color-amber-light: #F6D9A8;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+}
+
+/* visible keyboard focus, accessibility floor */
+:focus-visible {
+  outline: 3px solid var(--color-amber);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

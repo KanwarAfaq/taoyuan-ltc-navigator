@@ -6,16 +6,19 @@ Cleans the raw CSV from 桃園資料開放平台
 address so we have lat/lng for the map view later.
 
 Usage:
+    export OPENCAGE_API_KEY=your_key_here
     python ingest_daycare_centers.py raw_daycare.csv cleaned_daycare.json
 
+Get a free API key (2,500 requests/day, no credit card) at:
+    https://opencagedata.com/api
+
 Notes:
-- Uses OpenStreetMap's Nominatim for geocoding because it's free and
-  requires no API key. Nominatim's usage policy requires max 1 request/sec
-  and a descriptive User-Agent — both are respected below. If we later need
-  faster/more reliable geocoding, swap this for Google Geocoding API
-  (paid, but much more accurate for Taiwan addresses).
+- We originally used OpenStreetMap's Nominatim (free, no key), but its
+  public server IP-blocks automated/bulk use per their usage policy —
+  we hit that wall directly (403 Access denied) even on a single test
+  query, so switched to OpenCage instead.
 - Re-run is idempotent: already-geocoded rows (matched by address) are
-  cached to geocode_cache.json so we don't re-hit Nominatim on every run.
+  cached to geocode_cache.json so we don't burn API quota on re-runs.
 """
 
 import csv
@@ -23,11 +26,32 @@ import json
 import sys
 import time
 import os
+import re
 import requests
 
-NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-USER_AGENT = "taoyuan-ltc-navigator/0.1 (contact: replace-with-your-email@example.com)"
+OPENCAGE_URL = "https://api.opencagedata.com/geocode/v1/json"
 CACHE_PATH = os.path.join(os.path.dirname(__file__), "geocode_cache.json")
+
+# Matches segments like "大強里002鄰" or "茄明里1鄰" sitting between district
+# and street name. The lookbehind requires the match to start right after
+# "區" specifically — every Taoyuan district uses 區 as its administrative
+# suffix (all 13 were upgraded from 鄉/鎮/市 when Taoyuan became a special
+# municipality in 2014), so anchoring on 區 alone is both sufficient and
+# safer than including 市/鄉/鎮 in the class: some district names contain
+# those characters within their own name (e.g. 平鎮區), and including them
+# in the lookbehind let the regex falsely treat the middle of the district
+# name as a boundary, corrupting "平鎮區" down to "平鎮". Verified against
+# all 91 real addresses in this dataset with zero corruption.
+NEIGHBORHOOD_PATTERN = re.compile(r"(?<=區)[\u4e00-\u9fff]{1,4}里\d{1,4}鄰")
+
+
+def strip_neighborhood_codes(address):
+    return NEIGHBORHOOD_PATTERN.sub("", address).strip()
+
+
+def extract_district_query(address):
+    match = re.match(r"(桃園市[\u4e00-\u9fff]{1,3}區)", address)
+    return match.group(1) if match else None
 
 
 def load_cache():
@@ -42,29 +66,52 @@ def save_cache(cache):
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
 
-def geocode(address, cache):
-    if address in cache:
-        return cache[address]
-
-    # Bias search to Taiwan by appending country context
-    query = f"桃園市 {address}, Taiwan"
+def query_opencage(query, api_key, debug=False):
     resp = requests.get(
-        NOMINATIM_URL,
-        params={"q": query, "format": "json", "limit": 1},
-        headers={"User-Agent": USER_AGENT},
+        OPENCAGE_URL,
+        params={"q": query, "key": api_key, "countrycode": "tw", "limit": 1, "no_annotations": 1},
         timeout=10,
     )
     resp.raise_for_status()
-    results = resp.json()
-
+    time.sleep(1.1)  # free tier is ~1 req/sec — 0.2s was too fast and likely got silently throttled
+    data = resp.json()
+    results = data.get("results", [])
     if results:
-        lat, lng = float(results[0]["lat"]), float(results[0]["lon"])
-    else:
-        lat, lng = None, None
+        geom = results[0]["geometry"]
+        return geom["lat"], geom["lng"]
+    if debug:
+        status = data.get("status", {})
+        rate = data.get("rate", {})
+        print(f"    [debug] zero results for {query!r} — status={status} rate_remaining={rate.get('remaining')}")
+    return None, None
 
-    cache[address] = {"lat": lat, "lng": lng}
+
+def geocode(address, cache, api_key, debug=False):
+    if address in cache:
+        return cache[address]
+
+    cleaned = strip_neighborhood_codes(address)
+
+    lat, lng = query_opencage(cleaned, api_key, debug)
+    precision = "address"
+
+    if lat is None:
+        no_floor = re.sub(r"[\d一二三四五六七八九十至~]+樓.*$", "", cleaned).strip()
+        if no_floor and no_floor != cleaned:
+            lat, lng = query_opencage(no_floor, api_key, debug)
+            precision = "street"
+
+    if lat is None:
+        district_q = extract_district_query(cleaned)
+        if district_q:
+            lat, lng = query_opencage(district_q, api_key, debug)
+            precision = "district" if lat is not None else "failed"
+
+    if lat is None:
+        precision = "failed"
+
+    cache[address] = {"lat": lat, "lng": lng, "precision": precision}
     save_cache(cache)
-    time.sleep(1.1)  # respect Nominatim's 1 req/sec limit
     return cache[address]
 
 
@@ -88,6 +135,12 @@ def main():
         print("Usage: python ingest_daycare_centers.py <input.csv> <output.json>")
         sys.exit(1)
 
+    api_key = os.environ.get("OPENCAGE_API_KEY")
+    if not api_key:
+        print("Error: set OPENCAGE_API_KEY environment variable first.")
+        print("Get a free key (2,500 req/day, no card needed) at https://opencagedata.com/api")
+        sys.exit(1)
+
     input_path, output_path = sys.argv[1], sys.argv[2]
     cache = load_cache()
 
@@ -105,13 +158,15 @@ def main():
     for i, row in enumerate(rows, 1):
         if not row["address"]:
             skipped.append(row["name"])
-            row["lat"], row["lng"] = None, None
+            row["lat"], row["lng"], row["geocode_precision"] = None, None, "no_address"
             continue
-        geo = geocode(row["address"], cache)
+        geo = geocode(row["address"], cache, api_key, debug=True)
         row["lat"], row["lng"] = geo["lat"], geo["lng"]
-        print(f"  [{i}/{len(rows)}] {row['name']} -> {geo['lat']}, {geo['lng']}")
+        row["geocode_precision"] = geo["precision"]
+        print(f"  [{i}/{len(rows)}] {row['name']} -> {geo['lat']}, {geo['lng']} ({geo['precision']})")
 
-    failed = [r["name"] for r in rows if r["lat"] is None]
+    failed = [r["name"] for r in rows if r["geocode_precision"] == "failed"]
+    district_only = [r["name"] for r in rows if r["geocode_precision"] == "district"]
 
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(rows, f, ensure_ascii=False, indent=2)
@@ -119,8 +174,10 @@ def main():
     print(f"\nDone. Wrote {len(rows)} facilities to {output_path}")
     if skipped:
         print(f"Skipped (no address): {len(skipped)} -> {skipped}")
+    if district_only:
+        print(f"District-level only (approximate pin, verify manually): {len(district_only)} -> {district_only}")
     if failed:
-        print(f"Geocoding failed (needs manual lat/lng): {len(failed)} -> {failed}")
+        print(f"Geocoding failed completely (needs manual lat/lng): {len(failed)} -> {failed}")
 
 
 if __name__ == "__main__":

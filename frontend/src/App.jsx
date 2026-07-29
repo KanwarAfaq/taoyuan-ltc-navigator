@@ -3,9 +3,11 @@ import EasyCard from './components/EasyCard';
 import StepShell from './components/StepShell';
 import OptionCard from './components/OptionCard';
 import ResultCard from './components/ResultCard';
+import FacilityMatches from './components/FacilityMatches';
 import { CMS_LEVEL_QUOTA, HOUSEHOLD_COPAY_RATE, calculateSubsidy } from './data/subsidyRules';
+import { DISTRICTS } from './data/districts';
 
-const TOTAL_STEPS = 3;
+const TOTAL_STEPS = 4;
 
 const IDENTITY_OPTIONS = [
   { value: 'elderly_65', label: '65 歲以上長者', sublabel: '失能且需要照顧' },
@@ -19,6 +21,8 @@ export default function App() {
   const [identity, setIdentity] = useState(null);
   const [cmsLevel, setCmsLevel] = useState(null);
   const [householdType, setHouseholdType] = useState(null);
+  const [district, setDistrict] = useState('');
+  const [done, setDone] = useState(false);
 
   const result = cmsLevel && householdType ? calculateSubsidy(cmsLevel, householdType) : null;
 
@@ -27,6 +31,8 @@ export default function App() {
     setIdentity(null);
     setCmsLevel(null);
     setHouseholdType(null);
+    setDistrict('');
+    setDone(false);
   };
 
   return (
@@ -35,11 +41,11 @@ export default function App() {
         <h1 className="font-display text-3xl font-extrabold" style={{ color: 'var(--color-teal)' }}>
           桃園長照導航
         </h1>
-        <p className="text-ink/60 mt-1">3 步驟試算長照給付額度，不用打電話問半天</p>
+        <p className="text-ink/60 mt-1">4 步驟試算長照給付額度，並找到附近的日照中心</p>
       </header>
 
       <EasyCard
-        step={step > TOTAL_STEPS ? TOTAL_STEPS : step - 1}
+        step={done ? TOTAL_STEPS : step - 1}
         totalSteps={TOTAL_STEPS}
         cmsLevel={cmsLevel}
         householdLabel={householdType ? HOUSEHOLD_COPAY_RATE[householdType].label : null}
@@ -47,9 +53,9 @@ export default function App() {
       />
 
       <main className="w-full">
-        {step === 1 && (
+        {!done && step === 1 && (
           <StepShell
-            eyebrow="第 1 步 / 共 3 步"
+            eyebrow="第 1 步 / 共 4 步"
             title="請問是為誰試算？"
             description="長照給付適用於符合資格的失能者，先確認基本身分。"
             onNext={() => setStep(2)}
@@ -67,9 +73,9 @@ export default function App() {
           </StepShell>
         )}
 
-        {step === 2 && (
+        {!done && step === 2 && (
           <StepShell
-            eyebrow="第 2 步 / 共 3 步"
+            eyebrow="第 2 步 / 共 4 步"
             title="失能需要等級（CMS）大約是幾級？"
             description="此等級由照顧管理專員到府評估後核定。如果已收到核定通知，請選擇該等級；若尚未評估，可先選擇預估等級試算。"
             onBack={() => setStep(1)}
@@ -88,14 +94,14 @@ export default function App() {
           </StepShell>
         )}
 
-        {step === 3 && !result && (
+        {!done && step === 3 && (
           <StepShell
-            eyebrow="第 3 步 / 共 3 步"
+            eyebrow="第 3 步 / 共 4 步"
             title="家庭經濟狀況（身分別）"
             description="自付比例依身分別而不同，這會影響最終需要自付的金額。"
             onBack={() => setStep(2)}
-            onNext={() => {}}
-            nextDisabled
+            onNext={() => setStep(4)}
+            nextDisabled={!householdType}
           >
             {Object.entries(HOUSEHOLD_COPAY_RATE).map(([key, val]) => (
               <OptionCard
@@ -109,7 +115,41 @@ export default function App() {
           </StepShell>
         )}
 
-        {result && <ResultCard result={result} onRestart={restart} />}
+        {!done && step === 4 && (
+          <StepShell
+            eyebrow="第 4 步 / 共 4 步"
+            title="您在桃園市的哪個行政區？"
+            description="我們會找出該行政區內的日間照顧中心給您參考。"
+            onBack={() => setStep(3)}
+            onNext={() => setDone(true)}
+            nextDisabled={!district}
+            nextLabel="查看結果"
+          >
+            <select
+              value={district}
+              onChange={(e) => setDistrict(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl border-2 text-base bg-white"
+              style={{ borderColor: 'var(--color-sage)' }}
+            >
+              <option value="" disabled>請選擇行政區</option>
+              {DISTRICTS.map((d) => (
+                <option key={d} value={d}>{d}區</option>
+              ))}
+            </select>
+          </StepShell>
+        )}
+
+        {done && result && (
+          <div className="w-full max-w-lg mx-auto space-y-10">
+            <ResultCard result={result} onRestart={restart} />
+            <div>
+              <h2 className="font-display text-xl font-extrabold mb-4" style={{ color: 'var(--color-teal)' }}>
+                {district}區的日間照顧中心
+              </h2>
+              <FacilityMatches district={district} />
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

@@ -4,9 +4,12 @@
 
 ## Status
 
-- [x] Week 1, Day 1 — Subsidy calculator wizard (frontend only, no backend yet)
-- [x] Week 1, Day 2 — Facility data pipeline: raw CSV cleaned (91 facilities, 12 districts). Geocoding pending (see note below).
-- [ ] Week 1, Day 3-5 — Geocode + Supabase import + FastAPI backend
+- [x] Week 1, Day 1 — Subsidy calculator wizard (frontend)
+- [x] Week 1, Day 2 — Facility data pipeline: 91 facilities cleaned, geocoded, imported to Supabase
+- [x] Week 1, Day 3-4 — FastAPI backend (`/match`, `/facilities/{id}`), verified against real Supabase data
+- [x] Week 1, Day 5 — Frontend connected to backend: 4th wizard step (district picker) shows matched facilities
+- [ ] Deploy (Vercel + Zeabur/Fly.io)
+- [ ] Week 2 — LINE Bot + admin panel
 - [ ] Week 2 — LINE Bot + matching endpoint + admin panel
 - [ ] Week 3 — Reviews, map view, launch
 
@@ -71,6 +74,142 @@ to show those or filter them out in the matching UI.
 **Known limitation:** Nominatim's free geocoder is decent for major roads
 but sometimes fails on rural or newly-built addresses. The script logs any
 rows it couldn't geocode so we can fix those by hand.
+
+## Backend API (`backend/app`)
+
+FastAPI + the official `supabase-py` client, talking to Supabase over its
+REST API (HTTPS, port 443) rather than a raw Postgres connection.
+
+**Why this instead of a direct Postgres connection:** we originally built
+this with SQLModel + a direct `postgresql://` connection string, but hit a
+wall of environment-specific problems on Windows — Python 3.14/3.15
+compatibility issues with SQLModel's Pydantic internals, `psycopg2` needing
+a C compiler toolchain, and finally Supabase's direct-connection hostname
+being IPv6-only (unroutable on most home networks). Switching to the
+Supabase URL + anon key over HTTPS sidesteps all of that: it's just a web
+request, which works everywhere, and dropping the ORM layer also
+eliminates the SQLModel/Pydantic version-compatibility problems entirely.
+The tradeoff: slightly less query flexibility (no arbitrary SQL), which is
+fine for a matching endpoint like this — precision-based sorting is just
+done in Python after fetching, which is trivial at ~100 rows.
+
+**Endpoints:**
+- `GET /health` — sanity check
+- `GET /match?district=桃園&only_active=true&limit=50&offset=0` — main matching
+  endpoint. Filters by district (exact match, e.g. `桃園`, `中壢`, `八德`) and
+  active status (excludes `尚未特約` by default). Results are ordered by
+  geocode precision — exact address matches first, then street-level, then
+  district-level approximations last — so the most trustworthy pins surface
+  first in the UI.
+- `GET /facilities/{id}` — single facility detail, 404s if not found
+
+**Setup:**
+```bash
+cd backend/app
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env: Supabase dashboard -> Project Settings -> API
+#   SUPABASE_URL = Project URL
+#   SUPABASE_KEY = anon public key (safe to use here -- facilities table
+#   only allows public SELECT via RLS, see schema.sql)
+uvicorn main:app --reload --app-dir .
+```
+Then open http://127.0.0.1:8000/docs for interactive API docs.
+
+**Verified:** app boots cleanly, `/health` responds, and `/match` fails
+gracefully (clean 502, not a crash) when Supabase is unreachable -- tested
+against a fake project since I don't have your real credentials. Not yet
+tested against your actual Supabase data -- that's the next step.
+
+## Frontend ↔ backend integration
+
+The wizard now has a 4th step: after picking household type, the person
+picks their district (行政區 dropdown), then sees the subsidy result
+alongside real day care facilities in that district, pulled live from the
+FastAPI `/match` endpoint.
+
+**Config:** `frontend/.env.example` — copy to `.env`, set
+`VITE_API_BASE_URL` (defaults to `http://127.0.0.1:8000`, matches local
+`uvicorn` dev server). Update this once the backend is deployed somewhere.
+
+**Error handling:** if the backend isn't reachable (e.g. you forgot to
+start `uvicorn`), the UI shows a clear Chinese-language message rather
+than a blank screen or console-only error — this matters since the
+target audience isn't going to open dev tools to debug a fetch failure.
+
+**Data honesty:** facilities with `district`-level (approximate) geocode
+precision get a small caveat note in the UI (⚠ 約略位置...) rather than
+being presented with the same confidence as exact-address matches — this
+follows the same principle as the subsidy calculator's disclaimer: don't
+show a confident-looking wrong answer.
+
+**Not yet tested:** I verified the build compiles cleanly and the fetch
+logic is correct, but I have not run this against your live backend +
+Supabase end-to-end (I don't have a way to run your local `uvicorn`
+server from here). That's the next verification step — see "What to do"
+below.
+
+## Auto-sync service (`backend/sync_service`)
+
+A separate, small service whose only job is to periodically refresh
+facility data from the government source and push changes into Supabase.
+Deployed separately from the main API so a heavy dependency (headless
+Chromium) doesn't slow down or bloat the service that needs to stay fast
+for the LINE bot.
+
+**Why headless browser instead of a simple HTTP request:** the source
+portal (opendata.tycg.gov.tw) is JavaScript-rendered with no stable,
+directly-fetchable API endpoint we could find — even the linked Swagger
+docs URL is blocked by robots.txt. So this uses Playwright to actually
+render the page and click the download button, matched by its visible
+text ("下載CSV") rather than a CSS selector, since text survives page
+redesigns better.
+
+**⚠️ Not yet verified against the live site** — I can't run a browser or
+reach that domain from my environment. Everything except the actual
+browser-click-and-download step has been tested (CSV parsing against real
+data, the add/update/unchanged diff logic, the auth-protected endpoint).
+The browser step needs to be confirmed by actually running it. If the
+click fails, inspect the live page in a real browser and check whether
+the button's visible text still says exactly "下載CSV" — update the
+`page.click("text=...")` line in `sync.py` if not.
+
+**What it does on each sync:**
+1. Downloads the current CSV via headless browser
+2. Diffs every row against what's in Supabase (matched by facility name)
+3. New facilities → geocoded (via OpenCage) and inserted
+4. Changed facilities → updated; only re-geocoded if the *address* changed
+   (saves API quota — a phone number update doesn't need a new geocode)
+5. Unchanged facilities → just touched with a `last_synced_at` timestamp
+6. Facilities that disappeared from the source → flagged
+   `source_still_listed = false`, never hard-deleted (preserves any
+   vacancy data tied to them)
+
+**Setup:**
+```bash
+cd backend/sync_service
+pip install -r requirements.txt
+playwright install --with-deps chromium
+cp .env.example .env
+# Fill in: SUPABASE_URL, SUPABASE_KEY (service_role key, NOT anon --
+# this service writes to the DB), OPENCAGE_API_KEY, SYNC_SECRET_TOKEN
+# (make up a long random string yourself)
+python -m uvicorn main:app --reload --app-dir .
+```
+Test locally first: `http://127.0.0.1:8000/sync?token=<your-token>`
+
+**Deploy on Render** (as its own Web Service, separate from the main API):
+- Root Directory: `backend/sync_service`
+- Build Command: `pip install -r requirements.txt && playwright install --with-deps chromium`
+- Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+- Environment Variables: same four as `.env` above
+- Note: headless Chromium needs more memory than Render's free tier
+  comfortably offers — this may need the paid tier if the free tier OOMs
+  during the build or at runtime
+
+**Schedule it:** [cron-job.org](https://cron-job.org) (free) → create a
+job pinging `https://<your-render-url>/sync?token=<your-secret>` monthly
+(matches how infrequently the source data itself actually updates).
 
 ## Not yet built
 

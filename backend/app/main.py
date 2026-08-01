@@ -5,17 +5,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from supabase_client import supabase
 from models import Facility
 
+import os
+
 app = FastAPI(
     title="Taoyuan LTC Navigator API",
     description="桃園長照導航 — day care facility matching API",
     version="0.1.0",
 )
 
-# Vite's default dev port. Add your production frontend URL here once deployed.
+# Vite's default dev port, plus any origins from the ALLOWED_ORIGINS env var
+# (comma-separated) — set this in Vercel's Environment Variables to your
+# deployed frontend URL once you have it, no code change needed.
 ALLOWED_ORIGINS = [
     "*",
-    
-]
+] + [origin.strip() for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",") if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,

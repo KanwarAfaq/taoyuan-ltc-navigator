@@ -14,6 +14,7 @@ create table if not exists facilities (
   status text,                     -- 服務情形 (raw text from source)
   lat double precision,
   lng double precision,
+  geocode_precision text,          -- 'address' | 'street' | 'district' | 'failed' — see data_pipeline README
   vacancy_status text default 'unknown',  -- 'available' | 'full' | 'unknown' — updated by admin panel later (Week 2)
   vacancy_updated_at timestamptz,
   created_at timestamptz default now(),

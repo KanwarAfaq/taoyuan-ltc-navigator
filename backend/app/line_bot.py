@@ -24,6 +24,7 @@ from linebot.v3.messaging import (
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, PostbackEvent, FollowEvent
 
 from line_session import get_session, set_session, clear_session
+from line_flex import build_subsidy_flex, build_facilities_flex
 from subsidy_rules import CMS_LEVEL_QUOTA, HOUSEHOLD_COPAY_RATE, calculate_subsidy
 from facilities_service import search_facilities
 
@@ -86,33 +87,15 @@ def build_district_message() -> TextMessage:
     return _quick_reply_message("您在桃園市的哪個行政區呢？", options, "district")
 
 
-def build_result_messages(cms_level: int, household_type: str, district: str) -> list[TextMessage]:
+def build_result_messages(cms_level: int, household_type: str, district: str) -> list:
     result = calculate_subsidy(cms_level, household_type)
-    messages = []
-
-    subsidy_text = (
-        f"【試算結果】身分別：{result['household_label']}\n"
-        f"每月給付額度上限：NT$ {result['quota']:,}\n"
-        f"政府補助：NT$ {result['gov_pay']:,}\n"
-        f"家庭自付額（約）：NT$ {result['self_pay']:,}\n\n"
-        f"⚠️ 這只是試算，不是核定結果。實際額度由照顧管理專員評估後核定，"
-        f"請撥打長照專線 1966（免費）預約評估。"
-    )
-    messages.append(TextMessage(text=subsidy_text))
+    messages = [build_subsidy_flex(result)]
 
     facilities = search_facilities(district=district, only_active=True, limit=10)
     if not facilities:
         messages.append(TextMessage(text=f"{district}區目前沒有符合條件的日照中心資料"))
     else:
-        lines = [f"【{district}區日間照顧中心】共 {len(facilities)} 筆"]
-        for f in facilities[:10]:
-            line = f"\n■ {f['name']}\n{f['address']}"
-            if f.get("phone"):
-                line += f"\n☎ {f['phone']}"
-            if f.get("geocode_precision") == "district":
-                line += "\n（約略位置，實際地點請以電話確認）"
-            lines.append(line)
-        messages.append(TextMessage(text="\n".join(lines)))
+        messages.append(build_facilities_flex(district, facilities))
 
     messages.append(TextMessage(text="輸入任意訊息可重新開始試算 🔄"))
     return messages

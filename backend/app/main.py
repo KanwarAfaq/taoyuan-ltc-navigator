@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from supabase_client import supabase
 from models import Facility
+from facilities_service import search_facilities
+from line_bot import router as line_router
 
 import os
 
@@ -17,25 +19,19 @@ app = FastAPI(
 # (comma-separated) — set this in Vercel's Environment Variables to your
 # deployed frontend URL once you have it, no code change needed.
 ALLOWED_ORIGINS = [
-    "*",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
 ] + [origin.strip() for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",") if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-# Lower number = higher precision = shown first. Applied in Python since
-# Supabase's REST query builder doesn't support arbitrary CASE-expression
-# ordering — fine at this data volume (under 200 facilities).
-PRECISION_RANK = {"address": 0, "street": 1, "district": 2}
-
-
-def precision_sort_key(facility: dict):
-    return (PRECISION_RANK.get(facility.get("geocode_precision"), 3), facility.get("name") or "")
+app.include_router(line_router)
 
 
 @app.get("/health")
@@ -60,20 +56,10 @@ def match_facilities(
     street-level, then district-level approximations last) so the most
     trustworthy pins surface first.
     """
-    query = supabase.table("facilities").select("*")
-
-    if district:
-        query = query.eq("district", district)
-    if only_active:
-        query = query.eq("status", "服務中")
-
     try:
-        response = query.execute()
+        return search_facilities(district=district, only_active=only_active, limit=limit, offset=offset)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Supabase query failed: {e}")
-
-    rows = sorted(response.data, key=precision_sort_key)
-    return rows[offset : offset + limit]
 
 
 @app.get("/facilities/{facility_id}", response_model=Facility)

@@ -6,6 +6,7 @@ from supabase_client import supabase
 from models import Facility
 from facilities_service import search_facilities
 from line_bot import router as line_router
+from admin_router import router as admin_router
 
 import os
 
@@ -27,11 +28,12 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PATCH"],
     allow_headers=["*"],
 )
 
 app.include_router(line_router)
+app.include_router(admin_router)
 
 
 @app.get("/health")

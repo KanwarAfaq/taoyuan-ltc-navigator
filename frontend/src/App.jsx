@@ -4,6 +4,7 @@ import StepShell from './components/StepShell';
 import OptionCard from './components/OptionCard';
 import ResultCard from './components/ResultCard';
 import FacilityMatches from './components/FacilityMatches';
+import FacilityUpdatePage from './components/FacilityUpdatePage';
 import { CMS_LEVEL_QUOTA, HOUSEHOLD_COPAY_RATE, calculateSubsidy } from './data/subsidyRules';
 import { DISTRICTS } from './data/districts';
 
@@ -17,6 +18,18 @@ const IDENTITY_OPTIONS = [
 ];
 
 export default function App() {
+  // Simple path-based routing -- just two "pages" total, so a full router
+  // library would be overkill. /update/<token> shows the facility
+  // self-update page; everything else shows the subsidy wizard.
+  const pathMatch = window.location.pathname.match(/^\/update\/(.+)$/);
+  if (pathMatch) {
+    return <FacilityUpdatePage token={pathMatch[1]} />;
+  }
+
+  return <SubsidyWizard />;
+}
+
+function SubsidyWizard() {
   const [step, setStep] = useState(1);
   const [identity, setIdentity] = useState(null);
   const [cmsLevel, setCmsLevel] = useState(null);

@@ -6,6 +6,7 @@ load_dotenv()
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError(
@@ -14,3 +15,13 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     )
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Separate privileged client for the small number of endpoints that need
+# to write (e.g. the facility vacancy self-update feature) -- the anon
+# key above is read-only per our RLS policy, on purpose. This is optional
+# because most of the app (reads, LINE bot, sync trigger auth) doesn't
+# need it; endpoints that do check for it explicitly and fail clearly if
+# it's missing, rather than the whole app refusing to start.
+supabase_admin: Client = (
+    create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY) if SUPABASE_SERVICE_KEY else None
+)

@@ -24,7 +24,10 @@ class VacancyUpdateRequest(BaseModel):
 
 
 def _find_by_token(token: str) -> dict:
-    result = supabase.table("facilities").select("*").eq("edit_token", token).execute()
+    try:
+        result = supabase.table("facilities").select("*").eq("edit_token", token).execute()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Supabase query failed: {type(e).__name__}: {e}")
     if not result.data:
         raise HTTPException(status_code=404, detail="Invalid or unknown link")
     return result.data[0]
@@ -53,10 +56,13 @@ def update_vacancy_by_token(token: str, body: VacancyUpdateRequest):
     _find_by_token(token)
 
     now = datetime.now(timezone.utc).isoformat()
-    result = (
-        supabase_admin.table("facilities")
-        .update({"vacancy_status": body.vacancy_status, "vacancy_updated_at": now})
-        .eq("edit_token", token)
-        .execute()
-    )
+    try:
+        result = (
+            supabase_admin.table("facilities")
+            .update({"vacancy_status": body.vacancy_status, "vacancy_updated_at": now})
+            .eq("edit_token", token)
+            .execute()
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Supabase update failed: {type(e).__name__}: {e}")
     return result.data[0]

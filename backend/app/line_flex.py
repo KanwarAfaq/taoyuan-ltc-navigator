@@ -1,3 +1,5 @@
+
+from __future__ import annotations
 """
 line_flex.py — LINE Flex Message builders for the result display.
 

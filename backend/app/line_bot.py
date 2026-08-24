@@ -1,3 +1,5 @@
+
+from __future__ import annotations
 """
 line_bot.py — LINE Messaging API webhook + conversation logic.
 

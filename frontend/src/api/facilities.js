@@ -1,4 +1,5 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+// In production set VITE_API_BASE_URL (Vercel env). Localhost fallback is dev-only.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://127.0.0.1:8000' : '');
 
 /**
  * Fetches day care facilities matching a district from the FastAPI backend.
@@ -12,7 +13,7 @@ export async function matchFacilities(district) {
     const url = new URL('/match', API_BASE_URL);
     if (district) url.searchParams.set('district', district);
     response = await fetch(url);
-  } catch (err) {
+  } catch {
     throw new Error('NETWORK_ERROR');
   }
 

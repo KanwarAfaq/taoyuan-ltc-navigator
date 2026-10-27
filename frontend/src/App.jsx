@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import EasyCard from './components/EasyCard';
 import StepShell from './components/StepShell';
 import OptionCard from './components/OptionCard';
 import ResultCard from './components/ResultCard';
 import FacilityMatches from './components/FacilityMatches';
 import FacilityUpdatePage from './components/FacilityUpdatePage';
+import LandingSections from './components/LandingSections';
+import content from './seo/content.json';
 import { CMS_LEVEL_QUOTA, HOUSEHOLD_COPAY_RATE, calculateSubsidy } from './data/subsidyRules';
 import { DISTRICTS } from './data/districts';
 
@@ -22,8 +24,16 @@ export default function App() {
   // library would be overkill. /update/<token> shows the facility
   // self-update page; everything else shows the subsidy wizard.
   const pathMatch = window.location.pathname.match(/^\/update\/(.+)$/);
+  useEffect(() => {
+    if (!pathMatch) return;
+    // Private, token-protected page: keep it out of search results.
+    let robots = document.head.querySelector('meta[name="robots"]');
+    if (!robots) { robots = document.createElement('meta'); robots.name = 'robots'; document.head.appendChild(robots); }
+    robots.content = 'noindex, nofollow';
+    document.title = '機構名額更新｜桃園長照導航';
+  }, [pathMatch]);
   if (pathMatch) {
-    return <FacilityUpdatePage token={pathMatch[1]} />;
+    return <FacilityUpdatePage token={decodeURIComponent(pathMatch[1])} />;
   }
 
   return <SubsidyWizard />;
@@ -51,10 +61,15 @@ function SubsidyWizard() {
   return (
     <div className="min-h-screen flex flex-col items-center px-4 py-10 gap-10">
       <header className="text-center max-w-lg">
+        <nav aria-label="頁面導覽" className="flex justify-center gap-4 text-sm font-medium text-ink/60 mb-3">
+          <a href="/#features" className="hover:underline">{content.nav.features}</a>
+          <a href="/#faq" className="hover:underline">{content.nav.faq}</a>
+          <a href="/#resources" className="hover:underline">{content.nav.resources}</a>
+        </nav>
         <h1 className="font-display text-3xl font-extrabold" style={{ color: 'var(--color-teal)' }}>
-          桃園長照導航
+          {content.h1}
         </h1>
-        <p className="text-ink/60 mt-1">4 步驟試算長照給付額度，並找到附近的日照中心</p>
+        <p className="text-ink/60 mt-2">{content.lead}</p>
       </header>
 
       <EasyCard
@@ -164,6 +179,8 @@ function SubsidyWizard() {
           </div>
         )}
       </main>
+
+      <LandingSections />
     </div>
   );
 }

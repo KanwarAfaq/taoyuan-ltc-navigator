@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import seoPlugin from './seo-plugin.mjs'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), seoPlugin({ fallbackUrl: 'https://taoyuan-ltc-navigator.vercel.app' })],
   server: {
     host: true,
   },

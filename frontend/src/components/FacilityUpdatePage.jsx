@@ -31,7 +31,7 @@ export default function FacilityUpdatePage({ token }) {
       const updated = await updateVacancyByToken(token, status);
       setFacility(updated);
       setSavedJustNow(true);
-    } catch (err) {
+    } catch {
       setState('error');
     } finally {
       setSaving(false);

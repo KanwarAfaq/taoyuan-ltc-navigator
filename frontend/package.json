@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/onpage-audit.mjs --strict",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "audit:seo": "node scripts/onpage-audit.mjs --strict"
   },
   "dependencies": {
     "react": "^19.2.7",

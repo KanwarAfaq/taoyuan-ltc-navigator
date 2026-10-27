@@ -44,8 +44,7 @@ export default function FacilityMatches({ district }) {
       <div className="rounded-xl p-4 text-sm" style={{ backgroundColor: 'var(--color-sage-light)' }}>
         <p className="font-semibold mb-1">目前無法載入機構資料</p>
         <p className="text-ink/70">
-          可能是後端服務尚未啟動。若您是開發者，請確認 FastAPI 伺服器正在執行中
-          （<code className="text-xs bg-white px-1 rounded">uvicorn main:app --reload</code>）。
+          請稍後再試，或直接撥打 1966 長照專線查詢您所在行政區的日間照顧中心。
         </p>
       </div>
     );

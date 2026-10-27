@@ -49,7 +49,7 @@
     { "label": "桃園市政府社會局", "href": "https://sab.tycg.gov.tw/" }
   ],
   "related": [
-    { "label": "桃園長照導航站：機構名冊與 LINE 查詢", "href": "https://care-platform.vercel.app/" },
+    { "label": "桃園長照導航站：機構名冊與 LINE 查詢", "href": "https://care-platform-fe.vercel.app/" },
     { "label": "AnyTool：更多免費線上工具", "href": "https://anytool.online/" }
   ]
 }
